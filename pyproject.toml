@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "sparc-py"
+version = "0.1.0"
+description = "Real-time speech articulatory visualization using the full Python SPARC pipeline with browser-based SVG display"
+authors = []
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.9,<3.13"
+torch = ">=2.0"
+transformers = ">=4.30"
+scipy = "*"
+numpy = "*"
+websockets = "*"
+huggingface-hub = "*"
+librosa = "*"
+soundfile = "*"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
