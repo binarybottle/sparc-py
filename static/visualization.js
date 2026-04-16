@@ -44,6 +44,7 @@ function setupVocalTractVisualization() {
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
   createReferenceGrid(svg);
+  createContours(svg);
   createLegend(svg);
   createArticulatorMarkers(svg);
 }
@@ -112,6 +113,36 @@ function createLegend(svg) {
   svg.appendChild(legend);
 }
 
+function createContours(svg) {
+  // Tongue body (filled shape behind markers)
+  const tongue = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tongue.setAttribute('id', 'tongue-contour');
+  tongue.setAttribute('fill', 'rgba(220, 150, 150, 0.35)');
+  tongue.setAttribute('stroke', '#c07070');
+  tongue.setAttribute('stroke-width', '0.05');
+  tongue.setAttribute('stroke-linejoin', 'round');
+  tongue.setAttribute('stroke-linecap', 'round');
+  svg.appendChild(tongue);
+
+  // Upper lip shape
+  const ulContour = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  ulContour.setAttribute('id', 'ul-contour');
+  ulContour.setAttribute('fill', 'rgba(183, 28, 28, 0.3)');
+  ulContour.setAttribute('stroke', '#b71c1c');
+  ulContour.setAttribute('stroke-width', '0.04');
+  ulContour.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(ulContour);
+
+  // Lower lip shape
+  const llContour = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  llContour.setAttribute('id', 'll-contour');
+  llContour.setAttribute('fill', 'rgba(239, 154, 154, 0.3)');
+  llContour.setAttribute('stroke', '#c07070');
+  llContour.setAttribute('stroke-width', '0.04');
+  llContour.setAttribute('stroke-linejoin', 'round');
+  svg.appendChild(llContour);
+}
+
 function createArticulatorMarkers(svg) {
   const order = ['ul', 'll', 'li', 'tt', 'tb', 'td'];
 
@@ -136,6 +167,84 @@ function addSvgLabel(svg, text, x, y) {
   label.setAttribute('y', y);
   label.textContent = text;
   svg.appendChild(label);
+}
+
+/******************************************************************************
+ * CONTOUR RENDERING (tongue body + lip shapes)
+ ******************************************************************************/
+
+function catmullRomPath(points) {
+  if (points.length < 2) return '';
+  let d = `M ${points[0].x.toFixed(3)} ${points[0].y.toFixed(3)}`;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[Math.min(points.length - 1, i + 2)];
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+    d += ` C ${cp1x.toFixed(3)} ${cp1y.toFixed(3)} ${cp2x.toFixed(3)} ${cp2y.toFixed(3)} ${p2.x.toFixed(3)} ${p2.y.toFixed(3)}`;
+  }
+  return d;
+}
+
+function updateContours() {
+  const td = { x: smoothedFeatures.td_x, y: smoothedFeatures.td_y };
+  const tb = { x: smoothedFeatures.tb_x, y: smoothedFeatures.tb_y };
+  const tt = { x: smoothedFeatures.tt_x, y: smoothedFeatures.tt_y };
+  const ul = { x: smoothedFeatures.ul_x, y: smoothedFeatures.ul_y };
+  const ll = { x: smoothedFeatures.ll_x, y: smoothedFeatures.ll_y };
+
+  // --- Tongue ---
+  // Extend a root point behind TD (toward pharynx) and a tip past TT
+  const root = { x: td.x - 0.5, y: td.y + 1.0 };
+  const tipExt = { x: tt.x + 0.3, y: tt.y };
+
+  // Top surface spline: root → TD → TB → TT → tip
+  const topPoints = [root, td, tb, tt, tipExt];
+  const topD = catmullRomPath(topPoints);
+
+  // Bottom surface: offset downward, tapering from thick (back) to thin (tip)
+  const botPoints = [
+    { x: tipExt.x, y: tipExt.y + 0.15 },
+    { x: tt.x,     y: tt.y + 0.3 },
+    { x: tb.x,     y: tb.y + 0.5 },
+    { x: td.x,     y: td.y + 0.7 },
+    { x: root.x,   y: root.y + 0.4 }
+  ];
+  const botD = catmullRomPath(botPoints);
+
+  const tongueD = topD +
+    ` L ${botPoints[0].x.toFixed(3)} ${botPoints[0].y.toFixed(3)}` +
+    botD.replace(/^M\s*[\d.\s-]+/, '') +
+    ' Z';
+
+  const tongueEl = document.getElementById('tongue-contour');
+  if (tongueEl) tongueEl.setAttribute('d', tongueD);
+
+  // --- Lips (half-ellipse shapes) ---
+  const lipW = 0.4;
+  const lipH = 0.3;
+
+  // Upper lip: D-shape curving upward
+  const ulD =
+    `M ${(ul.x - lipW).toFixed(3)} ${ul.y.toFixed(3)}` +
+    ` C ${(ul.x - lipW).toFixed(3)} ${(ul.y - lipH).toFixed(3)}` +
+      ` ${(ul.x + lipW).toFixed(3)} ${(ul.y - lipH).toFixed(3)}` +
+      ` ${(ul.x + lipW).toFixed(3)} ${ul.y.toFixed(3)} Z`;
+  const ulEl = document.getElementById('ul-contour');
+  if (ulEl) ulEl.setAttribute('d', ulD);
+
+  // Lower lip: D-shape curving downward
+  const llD =
+    `M ${(ll.x - lipW).toFixed(3)} ${ll.y.toFixed(3)}` +
+    ` C ${(ll.x - lipW).toFixed(3)} ${(ll.y + lipH).toFixed(3)}` +
+      ` ${(ll.x + lipW).toFixed(3)} ${(ll.y + lipH).toFixed(3)}` +
+      ` ${(ll.x + lipW).toFixed(3)} ${ll.y.toFixed(3)} Z`;
+  const llEl = document.getElementById('ll-contour');
+  if (llEl) llEl.setAttribute('d', llD);
 }
 
 /******************************************************************************
@@ -164,6 +273,8 @@ function updateCharts() {
       marker.setAttribute('cx', clampToDisplay(latestFeatures[art].x || 0));
       marker.setAttribute('cy', clampToDisplay(latestFeatures[art].y || 0));
     }
+
+    updateContours();
   } catch (error) {
     debugLog('Error in updateCharts', error);
     debugCounters.errors++;
