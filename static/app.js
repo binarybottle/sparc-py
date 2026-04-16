@@ -37,16 +37,18 @@ const DISPLAY_MIN = -5.0;
 const DISPLAY_MAX = 4.0;
 
 let smoothedFeatures = {
-  ul_x: 0.5, ul_y: -0.3,
-  ll_x: 0.5, ll_y: 0.2,
-  li_x: 0.3, li_y: 0.4,
-  tt_x: 0.2, tt_y: 0.0,
-  tb_x: -0.3, tb_y: -0.2,
-  td_x: -0.8, td_y: -0.1,
-  jaw_opening: 0.3
+  ul_x: 0, ul_y: 0,
+  ll_x: 0, ll_y: 0,
+  li_x: 0, li_y: 0,
+  tt_x: 0, tt_y: 0,
+  tb_x: 0, tb_y: 0,
+  td_x: 0, td_y: 0,
+  jaw_opening: 0
 };
 
 let smoothingFactor = 0.4;
+const SILENCE_THRESHOLD_DB = -40;
+const SILENCE_DECAY = 0.15;
 let featureHistory = {};
 
 let debugCounters = {
@@ -138,7 +140,7 @@ const ARTICULATOR_CENTERS = {
   tt: { x:  0.5, y: -0.3 },
   li: { x:  2.0, y:  0.0 },
   ul: { x:  3.0, y: -1.75 },
-  ll: { x:  3.0, y: -0.75 }
+  ll: { x:  3.0, y: -1.75 }
 };
 
 const DISPLAY_SCALES = {
@@ -250,15 +252,23 @@ function handleServerFeatures(message) {
     const tt = articulationFeatures.tt, tb = articulationFeatures.tb, td = articulationFeatures.td;
     debugLog(`EMA z: TT(${tt.x.toFixed(2)},${tt.y.toFixed(2)}) TB(${tb.x.toFixed(2)},${tb.y.toFixed(2)}) TD(${td.x.toFixed(2)},${td.y.toFixed(2)})`);
 
+    const isSilent = (loudness || -60) < SILENCE_THRESHOLD_DB;
+
     // Map z-scores to display coordinates
     for (const key of ['ul', 'll', 'li', 'tt', 'tb', 'td']) {
       const z = articulationFeatures[key];
       if (!z || typeof z.x !== 'number' || typeof z.y !== 'number') continue;
-      const disp = emaToDisplay(key, z.x, z.y);
-      articulationFeatures[key] = disp;
+      if (isSilent) {
+        // Decay toward rest (center) position during silence
+        const c = ARTICULATOR_CENTERS[key];
+        articulationFeatures[key] = { x: c.x, y: c.y };
+      } else {
+        articulationFeatures[key] = emaToDisplay(key, z.x, z.y);
+      }
     }
 
-    updateFeatureHistory(articulationFeatures, 0, loudness || -60);
+    const alpha = isSilent ? SILENCE_DECAY : smoothingFactor;
+    updateFeatureHistory(articulationFeatures, 0, loudness || -60, alpha);
     updateStatus('Recording...');
     debugCounters.featuresUpdated++;
 
@@ -278,9 +288,9 @@ function handleServerFeatures(message) {
  * FEATURE HISTORY & SMOOTHING
  ******************************************************************************/
 
-function updateFeatureHistory(articulationFeatures, pitch, loudness) {
+function updateFeatureHistory(articulationFeatures, pitch, loudness, alphaOverride) {
   try {
-    const alpha = isRecording ? smoothingFactor : 0.3;
+    const alpha = alphaOverride != null ? alphaOverride : (isRecording ? smoothingFactor : 0.3);
 
     for (const art of ['ul', 'll', 'li', 'tt', 'tb', 'td']) {
       if (!articulationFeatures[art]) continue;
