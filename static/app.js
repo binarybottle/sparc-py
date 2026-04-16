@@ -137,8 +137,8 @@ const ARTICULATOR_CENTERS = {
   tb: { x: -2.0, y: -2.5 },
   tt: { x:  0.5, y: -0.3 },
   li: { x:  2.0, y:  0.0 },
-  ul: { x:  3.0, y: -1.25 },
-  ll: { x:  3.0, y: -1.25 }
+  ul: { x:  3.0, y: -1.75 },
+  ll: { x:  3.0, y: -0.75 }
 };
 
 const DISPLAY_SCALES = {
@@ -147,7 +147,7 @@ const DISPLAY_SCALES = {
   tt: { x: 0.8, y: 1.2 },
   li: { x: 0.5, y: 1.0 },
   ul: { x: 0.0, y: 0.0 },
-  ll: { x: 0.0, y: 0.0 }
+  ll: { x: 0.3, y: 1.2 }
 };
 
 function emaToDisplay(key, z_x, z_y) {

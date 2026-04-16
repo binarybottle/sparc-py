@@ -201,7 +201,7 @@ class RealtimeSPARC:
 
         # Linear projection -> EMA z-scores
         state_shape = states.shape  # (1, T, 1024)
-        flat = states.reshape(-1, state_shape[-1])
+        flat = np.ascontiguousarray(states.reshape(-1, state_shape[-1]))
 
         with torch.no_grad():
             ema = self.linear_model(
