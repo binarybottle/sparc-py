@@ -133,7 +133,12 @@
 
             <div class="status-indicator" id="status">Connecting to server...</div>
 
-            <div class="control-group" style="margin-left:auto;">
+            <div class="d-flex align-items-center gap-1" style="margin-left:auto;">
+                <input type="checkbox" id="markers-toggle" class="form-check-input" style="margin:0;">
+                <label for="markers-toggle" class="form-check-label" style="font-size:12px; color:#666; white-space:nowrap;">Markers</label>
+            </div>
+
+            <div class="control-group">
                 <label for="smoothing-slider">
                     Smoothing: <span id="smoothing-value" class="slider-value">0.4</span>
                 </label>

@@ -497,6 +497,19 @@ async function init() {
   if (startBtn) startBtn.addEventListener('click', startRecording);
   if (stopBtn) stopBtn.addEventListener('click', stopRecording);
 
+  const markersToggle = document.getElementById('markers-toggle');
+  if (markersToggle) {
+    function setMarkersVisible(visible) {
+      document.querySelectorAll('.articulator-marker').forEach(m => {
+        m.style.display = visible ? '' : 'none';
+      });
+      const legend = document.getElementById('legend');
+      if (legend) legend.style.display = visible ? '' : 'none';
+    }
+    setMarkersVisible(markersToggle.checked);
+    markersToggle.addEventListener('change', () => setMarkersVisible(markersToggle.checked));
+  }
+
   connectWebSocket();
 }
 
