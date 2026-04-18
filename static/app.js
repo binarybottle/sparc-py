@@ -33,8 +33,8 @@ let ws = null;
 let wsConnected = false;
 
 // Display bounds (MNGU0-derived SVG coordinate space)
-const DISPLAY_MIN = -5.0;
-const DISPLAY_MAX = 4.0;
+const DISPLAY_MIN = -7.0;
+const DISPLAY_MAX = 5.0;
 
 let smoothedFeatures = {
   ul_x: 0, ul_y: 0,
@@ -125,7 +125,7 @@ function initializeFeatureHistory() {
 
 function calculateJawOpening(ul_y, ll_y) {
   const lipDistance = Math.abs(ll_y - ul_y);
-  return Math.min(Math.max((lipDistance - 0.3) / 1.2, 0), 1);
+  return Math.min(Math.max(lipDistance / 0.6, 0), 1);
 }
 
 /******************************************************************************
@@ -134,22 +134,26 @@ function calculateJawOpening(ul_y, ll_y) {
  * Same constants & logic as sparc-js/app.js so positions are identical.
  ******************************************************************************/
 
+// Rest positions derived from traced anatomy (head.svg → vocal-tract.svg)
+// Uniform scale 0.0095 preserves original proportions
 const ARTICULATOR_CENTERS = {
-  td: { x: -4.0, y: -3.2 },
-  tb: { x: -2.0, y: -2.5 },
-  tt: { x:  0.5, y: -0.3 },
-  li: { x:  2.0, y:  0.0 },
-  ul: { x:  3.0, y: -1.75 },
-  ll: { x:  3.0, y: -1.75 }
+  td: { x: -0.53, y: -0.71 },   // tongue dorsum/root (traced pts 25-32)
+  tb: { x:  1.29, y: -2.15 },   // tongue body (traced pts 18-24)
+  tt: { x:  2.582, y: -1.562 },  // tongue tip (rightmost tongue pt; soft-clamped at teeth)
+  li: { x:  2.69, y: -1.47 },   // lower incisor tip (traced lower-tooth pt 6)
+  ul: { x:  3.00, y: -1.75 },   // upper lip inner edge (head profile pt 0, fixed)
+  ll: { x:  3.00, y: -1.60 }    // lower lip (slightly below UL — average speech has lips parted)
 };
 
+// Palate ceiling at y ≈ -2.47, TB rest at y = -2.15 → gap = 0.32
+// Scales must keep tongue below palate: max z * scale < gap
 const DISPLAY_SCALES = {
-  td: { x: 0.8, y: 1.2 },
-  tb: { x: 0.8, y: 1.2 },
-  tt: { x: 0.8, y: 1.2 },
-  li: { x: 0.5, y: 1.0 },
-  ul: { x: 0.0, y: 0.0 },
-  ll: { x: 0.3, y: 1.2 }
+  td: { x: 0.3, y: 0.3 },
+  tb: { x: 0.3, y: 0.2 },       // y limited: 1.5 * 0.2 = 0.3 < 0.32 gap
+  tt: { x: 0.3, y: 0.3 },
+  li: { x: 0.2, y: 0.4 },
+  ul: { x: 0.0, y: 0.0 },       // fixed — upper jaw doesn't move
+  ll: { x: 0.2, y: 0.6 }        // LL carries all mouth opening
 };
 
 function emaToDisplay(key, z_x, z_y) {
@@ -167,16 +171,14 @@ function emaToDisplay(key, z_x, z_y) {
 
 const F1_CLOSED_HZ = 250;
 const F1_OPEN_HZ   = 650;
-const LIP_CENTER_Y = -1.25;
-const LIP_HALF_GAP_CLOSED = 0.3;
-const LIP_HALF_GAP_OPEN   = 1.8;
+const LIP_CLOSED_Y = -1.75;
+const LIP_MAX_OPENING = 0.6;
 
 function f1ToLipPositions(f1Hz) {
   const t = Math.max(0, Math.min(1, (f1Hz - F1_CLOSED_HZ) / (F1_OPEN_HZ - F1_CLOSED_HZ)));
-  const halfGap = LIP_HALF_GAP_CLOSED + t * (LIP_HALF_GAP_OPEN - LIP_HALF_GAP_CLOSED);
   return {
-    ulY: LIP_CENTER_Y - halfGap,
-    llY: LIP_CENTER_Y + halfGap
+    ulY: LIP_CLOSED_Y,                          // upper lip stays fixed
+    llY: LIP_CLOSED_Y + t * LIP_MAX_OPENING     // only lower lip descends
   };
 }
 
@@ -487,7 +489,7 @@ async function init() {
   updateStatus('Connecting to server...');
   initializeFeatureHistory();
 
-  if (typeof setupCharts === 'function') setupCharts();
+  if (typeof setupCharts === 'function') await setupCharts();
   if (typeof setupSensitivityControls === 'function') setupSensitivityControls();
 
   const startBtn = document.getElementById('startButton');

@@ -30,55 +30,112 @@ const ARTICULATOR_COLORS = {
  * SVG SETUP
  ******************************************************************************/
 
-function setupVocalTractVisualization() {
+async function setupVocalTractVisualization() {
   const svg = document.getElementById('vocal-tract-svg');
   if (!svg) {
     console.error("SVG element 'vocal-tract-svg' not found");
     return;
   }
 
-  svg.setAttribute('viewBox', '-5 -5 9 9');
+  svg.setAttribute('viewBox', '-2 -3.5 6 5');
   svg.removeAttribute('width');
   svg.removeAttribute('height');
 
   while (svg.firstChild) svg.removeChild(svg.firstChild);
 
-  createReferenceGrid(svg);
+  await loadTracedAnatomy(svg);
   createContours(svg);
   createLegend(svg);
   createArticulatorMarkers(svg);
 }
 
-function createReferenceGrid(svg) {
-  const grid = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-  grid.setAttribute('id', 'reference-grid');
-  grid.setAttribute('opacity', '0.15');
+function anatomyLabel(parent, text, x, y, anchor) {
+  const el = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+  el.setAttribute('x', x);
+  el.setAttribute('y', y);
+  el.style.fontSize = '0.18px';
+  el.style.fill = '#999';
+  el.style.fontFamily = 'Arial, sans-serif';
+  el.style.fontStyle = 'italic';
+  el.style.textAnchor = anchor || 'middle';
+  el.style.dominantBaseline = 'middle';
+  el.textContent = text;
+  parent.appendChild(el);
+}
 
-  for (let y = -5; y <= 4; y++) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', '-5'); line.setAttribute('y1', y);
-    line.setAttribute('x2', '4');  line.setAttribute('y2', y);
-    line.setAttribute('stroke', y === 0 ? '#666' : '#999');
-    line.setAttribute('stroke-width', '0.03');
-    grid.appendChild(line);
+async function loadTracedAnatomy(svg) {
+  const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  g.setAttribute('id', 'static-anatomy');
+
+  // Style map: layer name → SVG style attributes
+  const styles = {
+    'head-and-neck':       { stroke: '#555', strokeWidth: '7',  fill: 'none' },
+    'lower-jaw':           { stroke: '#555', strokeWidth: '7',  fill: 'none' },
+    'palate':              { stroke: '#888', strokeWidth: '5',  fill: 'none' },
+    'throat-nasal-cavity': { stroke: '#888', strokeWidth: '5',  fill: 'none' },
+    'epiglottis':          { stroke: '#888', strokeWidth: '5',  fill: 'none' },
+    'upper-tooth':         { stroke: '#999', strokeWidth: '8',  fill: 'none' },
+    'lower-tooth':         { stroke: '#999', strokeWidth: '8',  fill: 'none' },
+    'tongue':              { skip: true }
+  };
+
+  // Lower jaw goes in a dynamic group
+  const jawGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+  jawGroup.setAttribute('id', 'lower-jaw-group');
+
+  try {
+    const resp = await fetch('vocal-tract.svg');
+    const text = await resp.text();
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(text, 'image/svg+xml');
+
+    const tracedGroup = doc.querySelector('#traced-anatomy');
+    if (!tracedGroup) { console.error('No #traced-anatomy in vocal-tract.svg'); return; }
+
+    const transform = tracedGroup.getAttribute('transform');
+
+    // Create a group with the same transform
+    const tg = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    tg.setAttribute('transform', transform);
+    tg.setAttribute('stroke-linecap', 'round');
+    tg.setAttribute('stroke-linejoin', 'round');
+
+    // Separate group for lower jaw (same base transform, dynamic offset added later)
+    const tjaw = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    tjaw.setAttribute('transform', transform);
+    tjaw.setAttribute('stroke-linecap', 'round');
+    tjaw.setAttribute('stroke-linejoin', 'round');
+
+    for (const path of tracedGroup.querySelectorAll('path')) {
+      const id = path.getAttribute('id');
+      const d = path.getAttribute('d');
+      const style = styles[id] || { stroke: '#aaa', strokeWidth: '4', fill: 'none' };
+
+      if (style.skip) continue;
+
+      const newPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      newPath.setAttribute('d', d);
+      newPath.setAttribute('fill', style.fill || 'none');
+      newPath.setAttribute('stroke', style.stroke || '#888');
+      newPath.setAttribute('stroke-width', style.strokeWidth || '5');
+
+      if (id === 'lower-jaw' || id === 'lower-tooth') {
+        tjaw.appendChild(newPath);
+      } else {
+        tg.appendChild(newPath);
+      }
+    }
+
+    g.appendChild(tg);
+    jawGroup.appendChild(tjaw);
+    g.appendChild(jawGroup);
+
+  } catch (e) {
+    console.error('Failed to load vocal-tract.svg:', e);
   }
 
-  for (let x = -5; x <= 4; x++) {
-    const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-    line.setAttribute('x1', x);  line.setAttribute('y1', '-5');
-    line.setAttribute('x2', x);  line.setAttribute('y2', '4');
-    line.setAttribute('stroke', x === 0 ? '#666' : '#999');
-    line.setAttribute('stroke-width', '0.03');
-    grid.appendChild(line);
-  }
 
-  svg.appendChild(grid);
-
-  // MNGU0: +x = anterior, +y = inferior; SVG: +x = right, +y = down
-  addSvgLabel(svg, 'FRONT', 3.0, 0.3);
-  addSvgLabel(svg, 'BACK', -4.2, 0.3);
-  addSvgLabel(svg, 'UP', 0.2, -4.5);
-  addSvgLabel(svg, 'DOWN', 0.2, 3.8);
+  svg.appendChild(g);
 }
 
 function createLegend(svg) {
@@ -91,18 +148,18 @@ function createLegend(svg) {
     const art = ARTICULATOR_COLORS[id];
 
     const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-    circle.setAttribute('cx', -4.8);
-    circle.setAttribute('cy', -4.6 + i * 0.5);
-    circle.setAttribute('r', '0.1');
+    circle.setAttribute('cx', -1.85);
+    circle.setAttribute('cy', -3.35 + i * 0.15);
+    circle.setAttribute('r', '0.04');
     circle.setAttribute('fill', art.fill);
     circle.setAttribute('stroke', art.stroke);
-    circle.setAttribute('stroke-width', '0.03');
+    circle.setAttribute('stroke-width', '0.01');
     legend.appendChild(circle);
 
     const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    text.setAttribute('x', -4.55);
-    text.setAttribute('y', -4.6 + i * 0.5);
-    text.style.fontSize = '0.22px';
+    text.setAttribute('x', -1.77);
+    text.setAttribute('y', -3.35 + i * 0.15);
+    text.style.fontSize = '0.1px';
     text.style.fill = '#333';
     text.style.textAnchor = 'start';
     text.style.dominantBaseline = 'central';
@@ -113,34 +170,29 @@ function createLegend(svg) {
   svg.appendChild(legend);
 }
 
+// 33 tongue surface points in SVG coordinate space (tip → root),
+// extracted from head.svg traced tongue via uniform matrix(0.0095,0,0,0.0095,-0.7335,-9.768)
+const TONGUE_BASE_POINTS = [
+  {x:1.932,y:-0.891},{x:1.953,y:-0.891},{x:2.027,y:-0.919},{x:2.084,y:-0.975},
+  {x:2.184,y:-1.101},{x:2.249,y:-1.151},{x:2.309,y:-1.206},{x:2.372,y:-1.332},
+  {x:2.477,y:-1.437},{x:2.548,y:-1.486},{x:2.574,y:-1.520},{x:2.582,y:-1.562},
+  {x:2.566,y:-1.606},{x:2.540,y:-1.646},{x:2.513,y:-1.732},{x:2.477,y:-1.814},
+  {x:2.418,y:-1.861},{x:2.351,y:-1.898},{x:2.205,y:-2.045},{x:2.016,y:-2.108},
+  {x:1.785,y:-2.129},{x:1.449,y:-2.213},{x:1.050,y:-2.213},{x:0.505,y:-2.234},
+  {x:0.001,y:-2.108},{x:-0.293,y:-1.877},{x:-0.444,y:-1.563},{x:-0.545,y:-1.227},
+  {x:-0.671,y:-0.849},{x:-0.671,y:-0.492},{x:-0.629,y:-0.156},{x:-0.503,y:0.179},
+  {x:-0.482,y:0.326}
+];
+
 function createContours(svg) {
-  // Tongue body (filled shape behind markers)
   const tongue = document.createElementNS('http://www.w3.org/2000/svg', 'path');
   tongue.setAttribute('id', 'tongue-contour');
   tongue.setAttribute('fill', 'rgba(220, 150, 150, 0.35)');
   tongue.setAttribute('stroke', '#c07070');
-  tongue.setAttribute('stroke-width', '0.05');
+  tongue.setAttribute('stroke-width', '0.03');
   tongue.setAttribute('stroke-linejoin', 'round');
   tongue.setAttribute('stroke-linecap', 'round');
   svg.appendChild(tongue);
-
-  // Upper lip shape
-  const ulContour = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  ulContour.setAttribute('id', 'ul-contour');
-  ulContour.setAttribute('fill', 'rgba(183, 28, 28, 0.3)');
-  ulContour.setAttribute('stroke', '#b71c1c');
-  ulContour.setAttribute('stroke-width', '0.04');
-  ulContour.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(ulContour);
-
-  // Lower lip shape
-  const llContour = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-  llContour.setAttribute('id', 'll-contour');
-  llContour.setAttribute('fill', 'rgba(239, 154, 154, 0.3)');
-  llContour.setAttribute('stroke', '#c07070');
-  llContour.setAttribute('stroke-width', '0.04');
-  llContour.setAttribute('stroke-linejoin', 'round');
-  svg.appendChild(llContour);
 }
 
 function createArticulatorMarkers(svg) {
@@ -151,22 +203,13 @@ function createArticulatorMarkers(svg) {
 
     const marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
     marker.setAttribute('id', `${id}-marker`);
-    marker.setAttribute('r', '0.15');
+    marker.setAttribute('r', '0.08');
     marker.setAttribute('fill', art.fill);
     marker.setAttribute('stroke', art.stroke);
     marker.setAttribute('stroke-width', '0.03');
     marker.setAttribute('class', 'articulator-marker');
     svg.appendChild(marker);
   });
-}
-
-function addSvgLabel(svg, text, x, y) {
-  const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-  label.setAttribute('class', 'grid-label');
-  label.setAttribute('x', x);
-  label.setAttribute('y', y);
-  label.textContent = text;
-  svg.appendChild(label);
 }
 
 /******************************************************************************
@@ -190,61 +233,81 @@ function catmullRomPath(points) {
   return d;
 }
 
+// Palate lower boundary (piecewise linear from traced palate path)
+const PALATE_CEIL = [
+  [-0.5, -2.40], [0.2, -2.44], [0.7, -2.46], [1.0, -2.46],
+  [1.5, -2.46], [1.8, -2.44], [2.1, -2.32], [2.3, -2.15], [2.5, -1.98]
+];
+const PALATE_MARGIN = 0.06;
+
+// Smooth teeth boundary: tongue approaches but never exceeds the back of the upper tooth.
+// Uses tanh compression so the tip keeps its curved shape instead of flattening.
+const TEETH_COMPRESS_START = 2.45;  // where compression begins (just before tip)
+const TEETH_BACK_X = 2.63;         // back surface of upper front tooth
+const TEETH_RANGE = TEETH_BACK_X - TEETH_COMPRESS_START;  // 0.18
+
+function softClampTeethX(x) {
+  if (x <= TEETH_COMPRESS_START) return x;
+  const excess = x - TEETH_COMPRESS_START;
+  return TEETH_COMPRESS_START + TEETH_RANGE * Math.tanh(excess / TEETH_RANGE);
+}
+
+function getPalateCeiling(x) {
+  const pts = PALATE_CEIL;
+  if (x <= pts[0][0]) return pts[0][1];
+  if (x >= pts[pts.length - 1][0]) return pts[pts.length - 1][1];
+  for (let i = 0; i < pts.length - 1; i++) {
+    if (x <= pts[i + 1][0]) {
+      const frac = (x - pts[i][0]) / (pts[i + 1][0] - pts[i][0]);
+      return pts[i][1] + frac * (pts[i + 1][1] - pts[i][1]);
+    }
+  }
+  return -2.0;
+}
+
 function updateContours() {
   const td = { x: smoothedFeatures.td_x, y: smoothedFeatures.td_y };
   const tb = { x: smoothedFeatures.tb_x, y: smoothedFeatures.tb_y };
   const tt = { x: smoothedFeatures.tt_x, y: smoothedFeatures.tt_y };
-  const ul = { x: smoothedFeatures.ul_x, y: smoothedFeatures.ul_y };
-  const ll = { x: smoothedFeatures.ll_x, y: smoothedFeatures.ll_y };
+  const ulY = ARTICULATOR_CENTERS.ul.y;
+  const ll = {
+    x: smoothedFeatures.ll_x,
+    y: Math.max(smoothedFeatures.ll_y, ulY)
+  };
 
-  // --- Tongue ---
-  // Extend a root point behind TD (toward pharynx) and a tip past TT
-  const root = { x: td.x - 0.5, y: td.y + 1.0 };
-  const tipExt = { x: tt.x + 0.3, y: tt.y };
+  // --- Deform traced tongue surface ---
+  const ttOff = { x: tt.x - ARTICULATOR_CENTERS.tt.x, y: tt.y - ARTICULATOR_CENTERS.tt.y };
+  const tbOff = { x: tb.x - ARTICULATOR_CENTERS.tb.x, y: tb.y - ARTICULATOR_CENTERS.tb.y };
+  const tdOff = { x: td.x - ARTICULATOR_CENTERS.td.x, y: td.y - ARTICULATOR_CENTERS.td.y };
 
-  // Top surface spline: root → TD → TB → TT → tip
-  const topPoints = [root, td, tb, tt, tipExt];
-  const topD = catmullRomPath(topPoints);
+  const n = TONGUE_BASE_POINTS.length;
+  const deformed = TONGUE_BASE_POINTS.map((bp, i) => {
+    const t = i / (n - 1);  // 0 = upper surface start, ~0.34 = tip, 1 = root
+    const wTT = Math.exp(-8 * (t - 0.34) * (t - 0.34));   // wide peak at tip
+    const wTB = Math.exp(-12 * (t - 0.55) * (t - 0.55));
+    const wTD = Math.exp(-12 * (t - 1.0) * (t - 1.0));
+    let x = bp.x + ttOff.x * wTT + tbOff.x * wTB + tdOff.x * wTD;
+    let y = bp.y + ttOff.y * wTT + tbOff.y * wTB + tdOff.y * wTD;
 
-  // Bottom surface: offset downward, tapering from thick (back) to thin (tip)
-  const botPoints = [
-    { x: tipExt.x, y: tipExt.y + 0.15 },
-    { x: tt.x,     y: tt.y + 0.3 },
-    { x: tb.x,     y: tb.y + 0.5 },
-    { x: td.x,     y: td.y + 0.7 },
-    { x: root.x,   y: root.y + 0.4 }
-  ];
-  const botD = catmullRomPath(botPoints);
+    // Smooth teeth boundary + palate ceiling
+    x = softClampTeethX(x);
+    const ceil = getPalateCeiling(x);
+    if (y < ceil + PALATE_MARGIN) y = ceil + PALATE_MARGIN;
 
-  const tongueD = topD +
-    ` L ${botPoints[0].x.toFixed(3)} ${botPoints[0].y.toFixed(3)}` +
-    botD.replace(/^M\s*[\d.\s-]+/, '') +
-    ' Z';
+    return { x, y };
+  });
 
+  const tongueD = catmullRomPath(deformed);
   const tongueEl = document.getElementById('tongue-contour');
   if (tongueEl) tongueEl.setAttribute('d', tongueD);
 
-  // --- Lips (half-ellipse shapes) ---
-  const lipW = 0.4;
-  const lipH = 0.3;
-
-  // Upper lip: D-shape curving upward
-  const ulD =
-    `M ${(ul.x - lipW).toFixed(3)} ${ul.y.toFixed(3)}` +
-    ` C ${(ul.x - lipW).toFixed(3)} ${(ul.y - lipH).toFixed(3)}` +
-      ` ${(ul.x + lipW).toFixed(3)} ${(ul.y - lipH).toFixed(3)}` +
-      ` ${(ul.x + lipW).toFixed(3)} ${ul.y.toFixed(3)} Z`;
-  const ulEl = document.getElementById('ul-contour');
-  if (ulEl) ulEl.setAttribute('d', ulD);
-
-  // Lower lip: D-shape curving downward
-  const llD =
-    `M ${(ll.x - lipW).toFixed(3)} ${ll.y.toFixed(3)}` +
-    ` C ${(ll.x - lipW).toFixed(3)} ${(ll.y + lipH).toFixed(3)}` +
-      ` ${(ll.x + lipW).toFixed(3)} ${(ll.y + lipH).toFixed(3)}` +
-      ` ${(ll.x + lipW).toFixed(3)} ${ll.y.toFixed(3)} Z`;
-  const llEl = document.getElementById('ll-contour');
-  if (llEl) llEl.setAttribute('d', llD);
+  // --- Lower jaw: only opens (translates down), never closes past rest ---
+  const jawGroup = document.getElementById('lower-jaw-group');
+  if (jawGroup) {
+    const restY = ARTICULATOR_CENTERS.ll.y;
+    const jawOffset = Math.max(0, ll.y - restY);
+    jawGroup.setAttribute('transform', `translate(0, ${jawOffset.toFixed(3)})`);
+  }
 }
 
 /******************************************************************************
@@ -264,6 +327,22 @@ function updateCharts() {
       latestFeatures[art] = (xHist && yHist)
         ? { x: xHist[xHist.length - 1], y: yHist[yHist.length - 1] }
         : { x: 0, y: 0 };
+    }
+
+    // Clamp LL: lips stop when touching (LL.y never above UL.y)
+    const ulY = ARTICULATOR_CENTERS.ul.y;
+    if (latestFeatures.ll && latestFeatures.ll.y < ulY) {
+      latestFeatures.ll.y = ulY;
+      smoothedFeatures.ll_y = ulY;
+    }
+
+    // Soft-clamp TT marker to match tongue contour's teeth boundary
+    if (latestFeatures.tt) {
+      const clampedX = softClampTeethX(latestFeatures.tt.x);
+      if (clampedX !== latestFeatures.tt.x) {
+        latestFeatures.tt.x = clampedX;
+        smoothedFeatures.tt_x = clampedX;
+      }
     }
 
     for (const art of articulators) {
@@ -319,19 +398,19 @@ function initializeDefaultPositions() {
 }
 
 // Phonetically-motivated z-scores for demo/reference vowel positions.
-// F1 values are canonical first-formant frequencies (Peterson & Barney, 1952),
-// used to drive lip separation in the demo animation.
+// LL y < 0 opens the jaw; the more negative, the wider.
+// TT y > 0 = tip up, y < 0 = tip down (behind lower teeth).
 const VOWEL_Z_SCORES = {
-  'i': { td:{x:-0.3,y: 0.5}, tb:{x: 0.5,y: 1.5}, tt:{x: 0.8,y: 0.8},
-         li:{x: 0.0,y: 1.0}, ul:{x:0,y:0}, ll:{x:0,y:0}, _f1: 270 },
-  'e': { td:{x:-0.2,y: 0.2}, tb:{x: 0.3,y: 0.8}, tt:{x: 0.5,y: 0.4},
-         li:{x: 0.0,y: 0.3}, ul:{x:0,y:0}, ll:{x:0,y:0}, _f1: 530 },
+  'i': { td:{x:-0.3,y: 0.5}, tb:{x: 0.5,y: 1.5}, tt:{x: 0.3,y:-0.5},
+         li:{x: 0.0,y: 0.5}, ul:{x:0,y:0}, ll:{x:0,y: 0.0} },
+  'e': { td:{x:-0.2,y: 0.2}, tb:{x: 0.3,y: 0.8}, tt:{x: 0.3,y:-0.2},
+         li:{x: 0.0,y: 0.3}, ul:{x:0,y:0}, ll:{x:0,y:-0.4} },
   'a': { td:{x:-0.2,y:-1.2}, tb:{x: 0.0,y:-1.0}, tt:{x: 0.2,y:-0.5},
-         li:{x: 0.0,y:-1.0}, ul:{x:0,y:0}, ll:{x:0,y:0}, _f1: 730 },
-  'o': { td:{x:-0.5,y: 0.3}, tb:{x:-0.3,y: 0.2}, tt:{x: 0.0,y:-0.2},
-         li:{x: 0.0,y:-0.3}, ul:{x:0,y:0}, ll:{x:0,y:0}, _f1: 570 },
-  'u': { td:{x:-0.8,y: 1.0}, tb:{x:-0.5,y: 0.8}, tt:{x:-0.2,y: 0.2},
-         li:{x: 0.0,y: 0.8}, ul:{x:0,y:0}, ll:{x:0,y:0}, _f1: 300 }
+         li:{x: 0.0,y:-1.0}, ul:{x:0,y:0}, ll:{x:0,y:-1.5} },
+  'o': { td:{x:-0.5,y: 0.3}, tb:{x:-0.3,y: 0.0}, tt:{x: 0.0,y:-0.3},
+         li:{x: 0.0,y:-0.3}, ul:{x:0,y:0}, ll:{x:0,y:-0.7} },
+  'u': { td:{x:-0.8,y: 1.0}, tb:{x:-0.5,y: 0.8}, tt:{x: 0.0,y:-0.3},
+         li:{x: 0.0,y: 0.5}, ul:{x:0,y:0}, ll:{x:0,y:-0.3} }
 };
 
 let VOWEL_POSITIONS = {};
@@ -339,25 +418,14 @@ function rebuildVowelPositions(zScoresMap) {
   for (const [vowel, zScores] of Object.entries(zScoresMap)) {
     VOWEL_POSITIONS[vowel] = {};
 
-    const f1 = zScores._f1 || 0;
-
-    for (const key of ['li', 'tt', 'tb', 'td']) {
+    for (const key of ['ul', 'll', 'li', 'tt', 'tb', 'td']) {
       VOWEL_POSITIONS[vowel][key] = emaToDisplay(key, zScores[key].x, zScores[key].y);
-    }
-
-    for (const key of ['ul', 'll']) {
-      VOWEL_POSITIONS[vowel][key] = emaToDisplay(key, zScores[key].x, zScores[key].y);
-    }
-    if (f1 > 0) {
-      const lip = f1ToLipPositions(f1);
-      VOWEL_POSITIONS[vowel].ul.y = lip.ulY;
-      VOWEL_POSITIONS[vowel].ll.y = lip.llY;
     }
 
     const ulY = VOWEL_POSITIONS[vowel].ul.y;
     const llY = VOWEL_POSITIONS[vowel].ll.y;
     VOWEL_POSITIONS[vowel].jaw_opening = Math.min(1, Math.max(0,
-      (Math.abs(llY - ulY) - 1.5) / 3));
+      Math.abs(llY - ulY) / 0.8));
   }
 }
 rebuildVowelPositions(VOWEL_Z_SCORES);
@@ -412,8 +480,8 @@ function testArticulatorAnimation() {
  * CONTROLS SETUP
  ******************************************************************************/
 
-function setupCharts() {
-  setupVocalTractVisualization();
+async function setupCharts() {
+  await setupVocalTractVisualization();
   initializeDefaultPositions();
   if (!isRecording) {
     testArticulatorAnimation();
